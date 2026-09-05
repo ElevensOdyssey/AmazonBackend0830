@@ -62,6 +62,43 @@ function normalizeHeader(value) {
   return String(value || '').replace(/\s+/g, '').replace(/[：:]/g, '').toLowerCase();
 }
 
+function numbersFromText(text) {
+  return [...String(text || '').matchAll(/-?\d+(?:\.\d+)?%?/g)].map(match => ({
+    raw: match[0],
+    value: Number(match[0].replace('%', ''))
+  })).filter(item => Number.isFinite(item.value));
+}
+
+function shortText(text, max = 32) {
+  const value = String(text || '').trim();
+  return value.length > max ? `${value.slice(0, max)}…` : value;
+}
+
+function lineSvg(values, color = '#7467f0') {
+  if (values.length < 2) return '';
+  const nums = values.map(item => item.value).slice(-8);
+  const min = Math.min(...nums);
+  const max = Math.max(...nums);
+  const span = max - min || 1;
+  const points = nums.map((n, i) => {
+    const x = 4 + i * (112 / Math.max(nums.length - 1, 1));
+    const y = 34 - ((n - min) / span) * 26;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  return `<svg class="mini-line" viewBox="0 0 120 40" role="img" aria-label="趋势"><polyline points="${points}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>`;
+}
+
+function barSvg(values) {
+  const nums = values.map(item => item.value).slice(-12);
+  if (!nums.length) return '';
+  const max = Math.max(...nums, 1);
+  return `<div class="mini-bars">${nums.map(n => `<span style="height:${Math.max(16, Math.round((n / max) * 46))}px"></span>`).join('')}</div>`;
+}
+
+function splitCellLines(text) {
+  return String(text || '').split(/[\n；;]+/).map(item => item.trim()).filter(Boolean);
+}
+
 async function getUser() {
   const { data: { user } } = await client.auth.getUser();
   return user;
@@ -236,12 +273,76 @@ function markReportColumns(table, columns) {
   });
 }
 
+function enhanceCell(cell, key) {
+  if (!cell || cell.dataset.enhanced === '1') return;
+  const text = cell.textContent.trim();
+  if (!text) return;
+  cell.dataset.enhanced = '1';
+  const safe = escapeHtml(text);
+  const nums = numbersFromText(text);
+  if (key === 'keyword') {
+    const lines = splitCellLines(text);
+    const title = lines[0] || text;
+    const meta = lines.slice(1, 3);
+    cell.innerHTML = `<div class="kw-card"><strong>${escapeHtml(title)}</strong>${meta.map(item => `<span>${escapeHtml(shortText(item, 18))}</span>`).join('')}</div>`;
+    return;
+  }
+  if (key === 'trend') {
+    const latest = nums[0]?.raw || '—';
+    cell.innerHTML = `<div class="trend-card"><div class="metric-label">月搜索量</div><strong>${escapeHtml(latest)}</strong>${lineSvg(nums)}${barSvg(nums)}<small>${safe}</small></div>`;
+    return;
+  }
+  if (key === 'competition') {
+    const score = nums[0]?.value;
+    const level = score >= 80 || /极高|高/.test(text) ? 'high' : score >= 50 || /中/.test(text) ? 'mid' : 'low';
+    cell.innerHTML = `<div class="difficulty-badge ${level}"><b>${escapeHtml(nums[0]?.raw || shortText(text, 6))}</b><span>${/极高/.test(text) ? '极高' : /高/.test(text) ? '高' : /中/.test(text) ? '中' : /低/.test(text) ? '低' : '难度'}</span></div>`;
+    return;
+  }
+  if (key === 'bid') {
+    const values = nums.map(item => item.raw).slice(0, 3);
+    cell.innerHTML = `<div class="bid-card"><strong>${escapeHtml(values[0] || text)}</strong>${values.slice(1).map((v, i) => `<span>${i ? '上限' : '下限'} ${escapeHtml(v)}</span>`).join('')}</div>`;
+    return;
+  }
+  if (key === 'topCompetitor') {
+    cell.innerHTML = `<div class="asin-card"><strong>${escapeHtml(shortText(text, 14))}</strong><span>最强竞对</span></div>`;
+    return;
+  }
+  if (key === 'ownOrganicRank' || key === 'competitorOrganicRank') {
+    const lines = splitCellLines(text);
+    cell.innerHTML = `<div class="rank-card">${lines.slice(0, 3).map((line, i) => `<p class="${i === 0 ? 'rank-main' : ''}">${escapeHtml(line)}</p>`).join('') || safe}</div>`;
+    return;
+  }
+  if (key === 'orders' || key === 'spend' || key === 'acos') {
+    cell.innerHTML = `<div class="ad-metric"><strong>${escapeHtml(nums[0]?.raw || text)}</strong><span>${key === 'orders' ? '订单' : key === 'spend' ? '花费' : 'ACOS'}</span></div>`;
+    return;
+  }
+  if (key === 'fieldSource') {
+    const lines = splitCellLines(text);
+    cell.innerHTML = `<div class="source-list">${lines.slice(0, 5).map(line => `<span>${escapeHtml(shortText(line, 34))}</span>`).join('')}</div>`;
+    return;
+  }
+  if (key === 'action') {
+    const kind = /止损|暂停/.test(text) ? 'stop' : /进攻|放大/.test(text) ? 'attack' : /防守|守住/.test(text) ? 'defense' : 'observe';
+    cell.innerHTML = `<div class="action-card ${kind}"><strong>${kind === 'stop' ? '止损/控本' : kind === 'attack' ? '进攻放大' : kind === 'defense' ? '防守保持' : '观察验证'}</strong><p>${safe}</p></div>`;
+  }
+}
+
+function enhanceReportTable(table, columns) {
+  table.classList.add('ops-report-table');
+  [...table.tBodies].forEach(tbody => {
+    [...tbody.rows].forEach(row => {
+      columns.forEach(col => enhanceCell(row.cells[col.index], col.key));
+    });
+  });
+}
+
 function buildColumnControls(host) {
   const table = host.querySelector('table');
   if (!table || host.querySelector('.column-controls')) return;
   const columns = findReportColumns(table);
   if (!columns.length) return;
   markReportColumns(table, columns);
+  enhanceReportTable(table, columns);
   const controls = document.createElement('section');
   controls.className = 'column-controls';
   controls.innerHTML = `<div class="column-controls-head"><div><h2>字段显示</h2><p class="muted compact">勾选要显示的列；取消勾选后仅隐藏前台展示，不改动报告原始数据。</p></div><button class="secondary" type="button" data-show-all>全部显示</button></div><div class="column-toggle-list">${columns.map(col => `<label class="column-toggle"><input type="checkbox" data-column-index="${col.index}" checked><span>${escapeHtml(col.label)}</span></label>`).join('')}</div>`;
