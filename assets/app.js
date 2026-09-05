@@ -2,6 +2,11 @@
 const client = window.supabase.createClient(APP_CONFIG.supabaseUrl, APP_CONFIG.supabasePublishableKey);
 const $ = selector => document.querySelector(selector);
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const BASE_PATH = location.hostname.endsWith('github.io') ? '/AmazonBackend0830web' : '';
+
+function appUrl(path = '/') {
+  return `${BASE_PATH}${path}`;
+}
 
 function setTheme(theme) {
   document.documentElement.dataset.theme = theme;
@@ -46,7 +51,7 @@ async function requireUser() {
   const user = await getUser();
   if (!user) {
     const next = `${location.pathname}${location.search}`;
-    location.href = `/?next=${encodeURIComponent(next)}`;
+    location.href = appUrl(`/?next=${encodeURIComponent(next)}`);
     return null;
   }
   return user;
@@ -73,7 +78,7 @@ async function renderTasks(user) {
     target.innerHTML = '<div class="empty">还没有任务。提交第一份广告报表后，进度会显示在这里。</div>';
     return;
   }
-  target.innerHTML = `<div class="table-wrap"><table><thead><tr><th>提交时间</th><th>ASIN</th><th>状态</th><th>报告／失败原因</th></tr></thead><tbody>${data.map(t => `<tr><td>${new Date(t.created_at).toLocaleString()}</td><td>${escapeHtml(t.asin)}</td><td><span class="${taskClass(t.status)}">${escapeHtml(t.status)}</span></td><td>${t.report_link ? `<a class="button secondary" href="/report/?task=${encodeURIComponent(t.id)}">查看报告</a>` : escapeHtml(t.failure_reason || '等待工人领取')}</td></tr>`).join('')}</tbody></table></div>`;
+  target.innerHTML = `<div class="table-wrap"><table><thead><tr><th>提交时间</th><th>ASIN</th><th>状态</th><th>报告／失败原因</th></tr></thead><tbody>${data.map(t => `<tr><td>${new Date(t.created_at).toLocaleString()}</td><td>${escapeHtml(t.asin)}</td><td><span class="${taskClass(t.status)}">${escapeHtml(t.status)}</span></td><td>${t.report_link ? `<a class="button secondary" href="${appUrl(`/report/?task=${encodeURIComponent(t.id)}`)}">查看报告</a>` : escapeHtml(t.failure_reason || '等待工人领取')}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
 async function initLogin() {
@@ -81,7 +86,7 @@ async function initLogin() {
   if (!form) return;
   const user = await getUser();
   if (user) {
-    location.href = new URLSearchParams(location.search).get('next') || '/tool/';
+    location.href = new URLSearchParams(location.search).get('next') || appUrl('/tool/');
     return;
   }
   form.addEventListener('submit', async event => {
@@ -94,7 +99,7 @@ async function initLogin() {
       setMessage(humanError(error), 'error');
       return;
     }
-    location.href = new URLSearchParams(location.search).get('next') || '/tool/';
+    location.href = new URLSearchParams(location.search).get('next') || appUrl('/tool/');
   });
   $('#sign-up').addEventListener('click', async () => {
     const email = $('#email').value.trim();
@@ -116,7 +121,7 @@ async function initTool() {
   $('#user-email').textContent = user.email || '已登录';
   $('#sign-out').addEventListener('click', async () => {
     await client.auth.signOut();
-    location.href = '/';
+    location.href = appUrl('/');
   });
   const refresh = () => renderTasks(user);
   $('#refresh-tasks')?.addEventListener('click', refresh);
