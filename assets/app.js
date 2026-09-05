@@ -227,11 +227,21 @@ function setColumnVisible(table, index, visible) {
   });
 }
 
+function markReportColumns(table, columns) {
+  columns.forEach(col => {
+    [...table.rows].forEach(row => {
+      const cell = row.cells[col.index];
+      if (cell) cell.classList.add(`report-col-${col.key}`);
+    });
+  });
+}
+
 function buildColumnControls(host) {
   const table = host.querySelector('table');
   if (!table || host.querySelector('.column-controls')) return;
   const columns = findReportColumns(table);
   if (!columns.length) return;
+  markReportColumns(table, columns);
   const controls = document.createElement('section');
   controls.className = 'column-controls';
   controls.innerHTML = `<div class="column-controls-head"><div><h2>字段显示</h2><p class="muted compact">勾选要显示的列；取消勾选后仅隐藏前台展示，不改动报告原始数据。</p></div><button class="secondary" type="button" data-show-all>全部显示</button></div><div class="column-toggle-list">${columns.map(col => `<label class="column-toggle"><input type="checkbox" data-column-index="${col.index}" checked><span>${escapeHtml(col.label)}</span></label>`).join('')}</div>`;
