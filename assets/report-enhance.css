@@ -1,0 +1,4 @@
+.report-content tr.action-defense td:first-child{box-shadow:inset 4px 0 var(--ok)}
+.report-content tr.action-attack td:first-child{box-shadow:inset 4px 0 var(--brand-strong)}
+.report-content tr.action-stop td:first-child{box-shadow:inset 4px 0 var(--bad)}
+.report-content tr.action-observe td:first-child{box-shadow:inset 4px 0 var(--gray)}

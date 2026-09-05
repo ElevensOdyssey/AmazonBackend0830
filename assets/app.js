@@ -8,6 +8,7 @@ function setTheme(theme) {
   localStorage.setItem('kb-theme', theme);
   const el = $('#theme-toggle');
   if (el) el.textContent = theme === 'dark' ? '浅色' : '深色';
+  if (el) el.setAttribute('aria-label', `切换到${theme === 'dark' ? '浅色' : '深色'}模式`);
 }
 
 function initTheme() {
@@ -62,7 +63,8 @@ async function renderTasks(user) {
     .from('keyword_tasks')
     .select('id,asin,status,report_link,failure_reason,created_at')
     .eq('user_id', user.id)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(10);
   if (error) {
     target.innerHTML = `<div class="empty">读取任务失败：${escapeHtml(humanError(error))}</div>`;
     return;
@@ -71,7 +73,7 @@ async function renderTasks(user) {
     target.innerHTML = '<div class="empty">还没有任务。提交第一份广告报表后，进度会显示在这里。</div>';
     return;
   }
-  target.innerHTML = `<div class="table-wrap"><table><thead><tr><th>创建时间</th><th>ASIN</th><th>状态</th><th>报告／原因</th></tr></thead><tbody>${data.map(t => `<tr><td>${new Date(t.created_at).toLocaleString()}</td><td>${escapeHtml(t.asin)}</td><td><span class="${taskClass(t.status)}">${escapeHtml(t.status)}</span></td><td>${t.report_link ? `<a href="/report/?task=${encodeURIComponent(t.id)}">查看报告</a>` : escapeHtml(t.failure_reason || '等待工人领取')}</td></tr>`).join('')}</tbody></table></div>`;
+  target.innerHTML = `<div class="table-wrap"><table><thead><tr><th>提交时间</th><th>ASIN</th><th>状态</th><th>报告／失败原因</th></tr></thead><tbody>${data.map(t => `<tr><td>${new Date(t.created_at).toLocaleString()}</td><td>${escapeHtml(t.asin)}</td><td><span class="${taskClass(t.status)}">${escapeHtml(t.status)}</span></td><td>${t.report_link ? `<a class="button secondary" href="/report/?task=${encodeURIComponent(t.id)}">查看报告</a>` : escapeHtml(t.failure_reason || '等待工人领取')}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
 async function initLogin() {
@@ -163,10 +165,23 @@ async function initTool() {
 function updateSummary(doc) {
   const rows = [...doc.querySelectorAll('tbody tr')];
   const rowText = row => row.textContent || '';
-  $('#sum-stop').textContent = rows.filter(row => /止损|暂停|降价|无订单/.test(rowText(row))).length;
-  $('#sum-attack').textContent = rows.filter(row => /重点进攻|进攻|放大/.test(rowText(row))).length;
-  $('#sum-defense').textContent = rows.filter(row => /防守|守住/.test(rowText(row))).length;
-  $('#sum-observe').textContent = rows.filter(row => /观察|放弃|长尾/.test(rowText(row))).length;
+  const kindOf = row => {
+    const text = rowText(row);
+    if (/止损|暂停|降价|无订单/.test(text)) return 'stop';
+    if (/重点进攻|进攻|放大/.test(text)) return 'attack';
+    if (/防守|守住/.test(text)) return 'defense';
+    return 'observe';
+  };
+  const counts = { stop: 0, attack: 0, defense: 0, observe: 0 };
+  rows.forEach(row => {
+    const kind = kindOf(row);
+    counts[kind] += 1;
+    row.classList.add(`action-${kind}`);
+  });
+  $('#sum-defense').textContent = counts.defense;
+  $('#sum-attack').textContent = counts.attack;
+  $('#sum-stop').textContent = counts.stop;
+  $('#sum-observe').textContent = counts.observe;
 }
 
 async function initReport() {
