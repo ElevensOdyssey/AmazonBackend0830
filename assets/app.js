@@ -6,7 +6,7 @@ const BASE_PATH = location.hostname.endsWith('github.io') ? '/AmazonBackend0830w
 const REPORT_COLUMNS = [
   { key: 'priority', label: '优先级', aliases: ['优先级'] },
   { key: 'keyword', label: '关键词', aliases: ['关键词'] },
-  { key: 'monthlySearches', label: '月搜索量', aliases: ['月搜索量'] },
+  { key: 'monthlySearches', label: '月搜索量', aliases: ['月搜索量'], defaultVisible: false },
   { key: 'competition', label: '竞争难度', aliases: ['竞争难度'] },
   { key: 'bid', label: '参考竞价', aliases: ['参考竞价'] },
   { key: 'trend', label: '搜索量月度趋势（Sorftime）', aliases: ['搜索量月度趋势', '搜索量 月度趋势', 'Sorftime'] },
@@ -16,7 +16,7 @@ const REPORT_COLUMNS = [
   { key: 'orders', label: '广告：订单', aliases: ['订单'] },
   { key: 'spend', label: '广告：花费', aliases: ['花费'] },
   { key: 'acos', label: '广告：ACOS', aliases: ['ACOS'] },
-  { key: 'fieldSource', label: '字段来源', aliases: ['字段来源'] },
+  { key: 'fieldSource', label: '字段来源', aliases: ['字段来源'], defaultVisible: false },
   { key: 'action', label: '打法建议', aliases: ['打法建议'] }
 ];
 
@@ -74,29 +74,48 @@ function shortText(text, max = 32) {
   return value.length > max ? `${value.slice(0, max)}…` : value;
 }
 
-function lineSvg(values, color = '#7467f0') {
+function lineSvg(values, color = '#7467f0', large = false) {
   if (values.length < 2) return '';
-  const nums = values.map(item => item.value).slice(-8);
+  const nums = values.map(item => item.value).slice(large ? -13 : -8);
   const min = Math.min(...nums);
   const max = Math.max(...nums);
   const span = max - min || 1;
   const points = nums.map((n, i) => {
-    const x = 4 + i * (112 / Math.max(nums.length - 1, 1));
-    const y = 34 - ((n - min) / span) * 26;
+    const xRange = large ? 260 : 112;
+    const yBase = large ? 112 : 34;
+    const yRange = large ? 92 : 26;
+    const x = 8 + i * (xRange / Math.max(nums.length - 1, 1));
+    const y = yBase - ((n - min) / span) * yRange;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
-  return `<svg class="mini-line" viewBox="0 0 120 40" role="img" aria-label="趋势"><polyline points="${points}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>`;
+  const labels = large ? nums.map((n, i) => `<text x="${(8 + i * (260 / Math.max(nums.length - 1, 1))).toFixed(1)}" y="137" text-anchor="middle">${i + 1}</text>`).join('') : '';
+  return `<svg class="${large ? 'trend-line-large' : 'mini-line'}" viewBox="${large ? '0 0 280 146' : '0 0 120 40'}" role="img" aria-label="搜索量趋势"><polyline points="${points}" fill="none" stroke="${color}" stroke-width="${large ? 4 : 3}" stroke-linecap="round" stroke-linejoin="round"></polyline>${labels}</svg>`;
 }
 
-function barSvg(values) {
-  const nums = values.map(item => item.value).slice(-12);
+function barSvg(values, large = false) {
+  const nums = values.map(item => item.value).slice(large ? -13 : -8);
   if (!nums.length) return '';
   const max = Math.max(...nums, 1);
-  return `<div class="mini-bars">${nums.map(n => `<span style="height:${Math.max(16, Math.round((n / max) * 46))}px"></span>`).join('')}</div>`;
+  return `<div class="${large ? 'trend-bars-large' : 'mini-bars'}">${nums.map(n => `<span style="height:${Math.max(large ? 18 : 12, Math.round((n / max) * (large ? 84 : 28)))}px"></span>`).join('')}</div>`;
 }
 
 function splitCellLines(text) {
   return String(text || '').split(/[\n；;]+/).map(item => item.trim()).filter(Boolean);
+}
+
+function isMonthToken(value) {
+  return /^202\d(0[1-9]|1[0-2])$/.test(String(value || ''));
+}
+
+function trendPointsFromText(text) {
+  const tokens = numbersFromText(text).map(item => item.raw.replace('%', ''));
+  const points = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    if (isMonthToken(tokens[i])) continue;
+    const nextMonth = tokens.slice(i + 1).find(isMonthToken);
+    points.push({ value: Number(tokens[i]), label: nextMonth || '' });
+  }
+  return points.filter(item => Number.isFinite(item.value)).slice(-13);
 }
 
 async function getUser() {
@@ -288,8 +307,13 @@ function enhanceCell(cell, key) {
     return;
   }
   if (key === 'trend') {
-    const latest = nums[0]?.raw || '—';
-    cell.innerHTML = `<div class="trend-card"><div class="metric-label">月搜索量</div><strong>${escapeHtml(latest)}</strong>${lineSvg(nums)}${barSvg(nums)}<small>${safe}</small></div>`;
+    const points = trendPointsFromText(text);
+    const latest = points.at(-1);
+    const first = points[0];
+    const delta = first && latest ? Math.round(((latest.value - first.value) / Math.max(first.value, 1)) * 100) : null;
+    const deltaClass = delta === null ? '' : delta >= 0 ? 'up' : 'down';
+    const labels = points.map((item, i) => `<span>${escapeHtml(item.label || `M${i + 1}`)}：${escapeHtml(String(item.value))}</span>`).join('');
+    cell.innerHTML = `<div class="trend-card"><button class="trend-trigger" type="button"><span>Sorftime 趋势</span><strong>${escapeHtml(latest ? String(latest.value) : '—')}</strong>${delta === null ? '' : `<em class="${deltaClass}">${delta >= 0 ? '+' : ''}${delta}%</em>`}</button><div class="trend-popover">${lineSvg(points, '#7467f0', true)}${barSvg(points, true)}<div class="trend-labels">${labels}</div><small>来源：Sorftime 月度搜索量趋势序列</small></div></div>`;
     return;
   }
   if (key === 'competition') {
@@ -345,17 +369,30 @@ function buildColumnControls(host) {
   enhanceReportTable(table, columns);
   const controls = document.createElement('section');
   controls.className = 'column-controls';
-  controls.innerHTML = `<div class="column-controls-head"><div><h2>字段显示</h2><p class="muted compact">勾选要显示的列；取消勾选后仅隐藏前台展示，不改动报告原始数据。</p></div><button class="secondary" type="button" data-show-all>全部显示</button></div><div class="column-toggle-list">${columns.map(col => `<label class="column-toggle"><input type="checkbox" data-column-index="${col.index}" checked><span>${escapeHtml(col.label)}</span></label>`).join('')}</div>`;
+  controls.innerHTML = `<details open><summary><span>字段显示 / 伸缩表头</span><span class="control-actions"><button class="secondary" type="button" data-show-core>精简视图</button><button class="secondary" type="button" data-show-all>全部显示</button></span></summary><p class="muted compact">默认隐藏“月搜索量”和“字段来源”，主表只展示 Sorftime 搜索量趋势；取消勾选仅隐藏前台展示，不改动原始报告。</p><div class="column-toggle-list">${columns.map(col => `<label class="column-toggle"><input type="checkbox" data-column-index="${col.index}" ${col.defaultVisible === false ? '' : 'checked'}><span>${escapeHtml(col.label)}</span></label>`).join('')}</div></details>`;
   host.prepend(controls);
+  columns.forEach(col => {
+    if (col.defaultVisible === false) setColumnVisible(table, col.index, false);
+  });
   controls.addEventListener('change', event => {
     const input = event.target.closest('input[data-column-index]');
     if (!input) return;
     setColumnVisible(table, Number(input.dataset.columnIndex), input.checked);
   });
-  controls.querySelector('[data-show-all]')?.addEventListener('click', () => {
+  controls.querySelector('[data-show-all]')?.addEventListener('click', event => {
+    event.preventDefault();
     controls.querySelectorAll('input[data-column-index]').forEach(input => {
       input.checked = true;
       setColumnVisible(table, Number(input.dataset.columnIndex), true);
+    });
+  });
+  controls.querySelector('[data-show-core]')?.addEventListener('click', event => {
+    event.preventDefault();
+    const hide = new Set(['monthlySearches', 'fieldSource', 'orders', 'spend']);
+    controls.querySelectorAll('input[data-column-index]').forEach(input => {
+      const col = columns.find(item => item.index === Number(input.dataset.columnIndex));
+      input.checked = !hide.has(col?.key);
+      setColumnVisible(table, Number(input.dataset.columnIndex), input.checked);
     });
   });
 }
