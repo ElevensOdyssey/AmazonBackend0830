@@ -3,6 +3,22 @@ const client = window.supabase.createClient(APP_CONFIG.supabaseUrl, APP_CONFIG.s
 const $ = selector => document.querySelector(selector);
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const BASE_PATH = location.hostname.endsWith('github.io') ? '/AmazonBackend0830web' : '';
+const REPORT_COLUMNS = [
+  { key: 'priority', label: '优先级', aliases: ['优先级'] },
+  { key: 'keyword', label: '关键词', aliases: ['关键词'] },
+  { key: 'monthlySearches', label: '月搜索量', aliases: ['月搜索量'] },
+  { key: 'competition', label: '竞争难度', aliases: ['竞争难度'] },
+  { key: 'bid', label: '参考竞价', aliases: ['参考竞价'] },
+  { key: 'trend', label: '搜索量月度趋势（Sorftime）', aliases: ['搜索量月度趋势', '搜索量 月度趋势', 'Sorftime'] },
+  { key: 'topCompetitor', label: '最强竞对', aliases: ['最强竞对'] },
+  { key: 'ownOrganicRank', label: '自己自然位', aliases: ['自己自然位'] },
+  { key: 'competitorOrganicRank', label: '竞对自然位', aliases: ['竞对自然位'] },
+  { key: 'orders', label: '广告：订单', aliases: ['订单'] },
+  { key: 'spend', label: '广告：花费', aliases: ['花费'] },
+  { key: 'acos', label: '广告：ACOS', aliases: ['ACOS'] },
+  { key: 'fieldSource', label: '字段来源', aliases: ['字段来源'] },
+  { key: 'action', label: '打法建议', aliases: ['打法建议'] }
+];
 
 function appUrl(path = '/') {
   return `${BASE_PATH}${path}`;
@@ -40,6 +56,10 @@ function setMessage(text, type = '') {
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function normalizeHeader(value) {
+  return String(value || '').replace(/\s+/g, '').replace(/[：:]/g, '').toLowerCase();
 }
 
 async function getUser() {
@@ -189,6 +209,46 @@ function updateSummary(doc) {
   $('#sum-observe').textContent = counts.observe;
 }
 
+function findReportColumns(table) {
+  const headers = [...table.querySelectorAll('thead th')];
+  return REPORT_COLUMNS.map(config => {
+    const index = headers.findIndex(th => {
+      const text = normalizeHeader(th.textContent);
+      return config.aliases.some(alias => text.includes(normalizeHeader(alias)));
+    });
+    return { ...config, index };
+  }).filter(item => item.index >= 0);
+}
+
+function setColumnVisible(table, index, visible) {
+  [...table.rows].forEach(row => {
+    const cell = row.cells[index];
+    if (cell) cell.classList.toggle('is-hidden-column', !visible);
+  });
+}
+
+function buildColumnControls(host) {
+  const table = host.querySelector('table');
+  if (!table || host.querySelector('.column-controls')) return;
+  const columns = findReportColumns(table);
+  if (!columns.length) return;
+  const controls = document.createElement('section');
+  controls.className = 'column-controls';
+  controls.innerHTML = `<div class="column-controls-head"><div><h2>字段显示</h2><p class="muted compact">勾选要显示的列；取消勾选后仅隐藏前台展示，不改动报告原始数据。</p></div><button class="secondary" type="button" data-show-all>全部显示</button></div><div class="column-toggle-list">${columns.map(col => `<label class="column-toggle"><input type="checkbox" data-column-index="${col.index}" checked><span>${escapeHtml(col.label)}</span></label>`).join('')}</div>`;
+  host.prepend(controls);
+  controls.addEventListener('change', event => {
+    const input = event.target.closest('input[data-column-index]');
+    if (!input) return;
+    setColumnVisible(table, Number(input.dataset.columnIndex), input.checked);
+  });
+  controls.querySelector('[data-show-all]')?.addEventListener('click', () => {
+    controls.querySelectorAll('input[data-column-index]').forEach(input => {
+      input.checked = true;
+      setColumnVisible(table, Number(input.dataset.columnIndex), true);
+    });
+  });
+}
+
 async function initReport() {
   const host = $('#report-content');
   if (!host) return;
@@ -216,6 +276,7 @@ async function initReport() {
     const doc = new DOMParser().parseFromString(html, 'text/html');
     updateSummary(doc);
     host.innerHTML = doc.body.innerHTML;
+    buildColumnControls(host);
   } catch (error) {
     host.innerHTML = `<div class="empty">${escapeHtml(humanError(error))}。请确认任务已完成，且 OSS CORS 已允许本站域名。</div>`;
   }
